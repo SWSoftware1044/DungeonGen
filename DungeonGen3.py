@@ -4,11 +4,12 @@ from PIL import Image,ImageDraw
 from collections import namedtuple
 from bresenham import bresenham
 
+DEBUG = False
 WIDTH = 200
 HEIGHT = 200
 Tile = namedtuple('Tile','y x')
 
-#random.seed('***REMOVED***')
+#random.seed('##########')
 
 class AutomaticCell:
     def __init__(self,h,w):
@@ -168,21 +169,24 @@ for y,row in enumerate(level):
     for x,wall in enumerate(row):
         if wall:
             walls.append((x,y))
-
-cavesWalls = []
-for cave in AutoCell.cavesWallsBackup:
-    for tile in cave:
-        cavesWalls.append((tile.x,tile.y))
-
-Caves = []
-for cave in AutoCell.bresens:
-    Cave = []
-    for tile in cave:
-        Cave.append((tile.x,tile.y))
-    Caves.append(Cave)
-
 iD.point(walls,(0,0,0))
-#iD.point(cavesWalls,(255,0,0))
-#for Cave in Caves:
-#    iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
+
+if DEBUG:
+    cavesWalls = []
+    for cave in AutoCell.cavesWallsBackup:
+        for tile in cave:
+            cavesWalls.append((tile.x,tile.y))
+    AutoCell.caves = []
+    for y,row in enumerate(AutoCell.level):
+        for x,wall in enumerate(row):
+            if not wall: AutoCell.floodFill(y,x)
+    Caves = []
+    for cave in AutoCell.caves:
+        Cave = []
+        for tile in cave:
+            Cave.append((tile.x,tile.y))
+        Caves.append(Cave)
+    iD.point(cavesWalls,(255,0,0))
+    for Cave in Caves:
+        iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
 I.show()
