@@ -4,21 +4,27 @@ from PIL import Image,ImageDraw
 from collections import namedtuple
 from bresenham import bresenham
 
-DEBUG = False
+DEBUG = True
 WIDTH = 200
 HEIGHT = 200
 Tile = namedtuple('Tile','y x')
 
-#random.seed('##########')
+SQ_DIST = lambda a,b: (b.x-a.x)**2 + (b.y-a.y)**2
+TRANSPOSE = lambda a: Tile(a[1],a[0])
+ADD = lambda a,b: Tile(a.y+b.y,a.x+b.x)
+FLATTEN = lambda l: [item for sublist in l for item in sublist]
+
+random.seed('***REMOVED***')
 
 class AutomaticCell:
     def __init__(self,h,w):
         self.h = h
         self.w = w
+        self.center = Tile(self.h//2,self.w//2)
         self.level = [[False for _ in range(self.w)] for _ in range(self.h)]
         self.caves = []
+        self.cavesReferences = {}
         self.cavesWalls = []
-        self.cavesWallsBackup = []
         self.bresens = []
 
         self.sims = 8           #Number of times to run the celular automata model
@@ -34,7 +40,6 @@ class AutomaticCell:
         for _ in range(self.sims):
             self.level = self.stepSimulate()
         self.cleanup()
-        self.cavesWallsBackup = self.cavesWalls
         self.connect()
         return self.level
 
@@ -59,20 +64,19 @@ class AutomaticCell:
         '''Floods cave areas from a point (y,x), ignoring walls.'''
         cave = set()
         toBeFilled = set([Tile(y,x)])
-        flatten = lambda l: [item for sublist in l for item in sublist]
-        tileAdd = lambda a,b: Tile(a.y+b.y,a.x+b.x)
         while toBeFilled:
             tile = toBeFilled.pop()
             if tile not in cave:
                 cave.add(tile)
                 self.level[tile.y][tile.x] = True
-                neighboringTiles = flatten([[tileAdd(tile,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
+                neighboringTiles = FLATTEN([[ADD(tile,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
                 for adj in [Tile(j,i) for j,i in neighboringTiles if 0<=j<self.h and 0<=i<self.w and not self.level[j][i]]:
                     if self.level[adj.y][adj.x] == 0:
                         if adj not in toBeFilled and adj not in cave:
                             toBeFilled.add(adj)
         if len(cave) >= self.minCave:
             self.caves.append(list(cave))
+            self.cavesReferences.update({k:len(self.caves)-1 for k in cave})
 
     def calcWalls(self,cave):
             caveNeighbors = dict()
@@ -115,51 +119,77 @@ class AutomaticCell:
                 self.level[tile.y][tile.x] = False
         for cave in self.caves:
             self.cavesWalls.append(self.calcWalls(cave))
+        if self.level[self.center.y][self.center.x]:
+            neighboringTiles = FLATTEN([[ADD(self.center,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
+            for tile in neighboringTiles:
+                if not self.level[tile.y][tile.x]:
+                    self.center = tile
+                    return
+            raise RuntimeError("Center not found. Map invalid.")
 
     def connect(self):
         '''Connects caves using bresenham lines.'''
-        d = lambda a,b: (b.x-a.x)**2 + (b.y-a.y)**2
-        t = lambda a: Tile(a[1],a[0])
-        while len(self.caves) > 1:
-            zeroCave = 0
-            zeroCaveWalls = self.cavesWalls.pop(0)
-            closeCave = None
-            zeroWall = None
-            closeWall = None
-            minDist = 100000000000000000000000000000000000000000
-            for wall in zeroCaveWalls:
-                for i,otherCave in enumerate(self.cavesWalls):
-                    for otherWall in otherCave:
-                        dist = d(wall,otherWall)
-                        if dist < minDist and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
-                            minDist = dist
-                            zeroWall = wall
-                            closeWall = otherWall
-                            closeCave = i
-            if zeroWall == None and closeWall == None:
-                print(len(self.cavesWalls))
-                for wall in zeroCaveWalls:
-                    for i,otherCave in enumerate(self.cavesWalls):
-                        for otherWall in otherCave:
-                            dist = d(wall,otherWall)
-                            if dist < 100 and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
-                                minDist = dist
-                                zeroWall = wall
-                                closeWall = otherWall
-                                closeCave = i
-            if zeroWall == None and closeWall == None:
-                zeroWall = zeroCaveWalls[random.randint(0,len(zeroCaveWalls)-1)]
-                closeCave = random.randint(0,len(self.cavesWalls)-1)
-                closeWall = self.cavesWalls[closeCave][random.randint(0,len(self.cavesWalls[closeCave])-1)]
-            bresen=list(map(t,list(bresenham(zeroWall.x,zeroWall.y,closeWall.x,closeWall.y))))
-            self.bresens.append(bresen)
-            self.cavesWalls.pop(closeCave)
-            closeCave = self.caves.pop(closeCave)
-            zeroCave = self.caves.pop(zeroCave)
-            self.caves.append(list(set.union(set(zeroCave),set(closeCave),set(bresen))))
-            for tile in bresen:
-                self.level[tile.y][tile.x]=False
-            self.cavesWalls.append(self.calcWalls(self.caves[-1]))
+        # TODO: Add better connection, using center bresenhams and cave detection.
+        cavesWalls = self.cavesWalls
+        while len(cavesWalls) > 0:
+            currentCaveWalls = cavesWalls.pop()
+            for wall in currentCaveWalls:
+                bresen = list(map(TRANSPOSE,list(bresenham(wall.x,wall.y,self.center.x,self.center.y))))
+                active = False
+                for i,point in enumerate(bresen[1:]):
+                    if self.cavesReferences.get(point,-1) == self.cavesReferences[wall]:
+                        break
+                    elif point in self.cavesReferences and self.cavesReferences[point] != self.cavesReferences[wall]:
+                        bresen = bresen[:i+1]
+                        active = True
+                        break
+                if active:
+                    print('FOUND!')
+                    for point in bresen:
+                        self.level[point.y][point.x] = False
+                    self.bresens.append(bresen)
+                    break
+
+        # while len(self.caves) > 1:
+        #     zeroCave = 0
+        #     zeroCaveWalls = self.cavesWalls.pop(0)
+        #     closeCave = None
+        #     zeroWall = None
+        #     closeWall = None
+        #     minDist = 100000000000000000000000000000000000000000
+        #     for wall in zeroCaveWalls:
+        #         for i,otherCave in enumerate(self.cavesWalls):
+        #             for otherWall in otherCave:
+        #                 dist = d(wall,otherWall)
+        #                 if dist < minDist and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
+        #                     minDist = dist
+        #                     zeroWall = wall
+        #                     closeWall = otherWall
+        #                     closeCave = i
+        #     if zeroWall == None and closeWall == None:
+        #         print(len(self.cavesWalls))
+        #         for wall in zeroCaveWalls:
+        #             for i,otherCave in enumerate(self.cavesWalls):
+        #                 for otherWall in otherCave:
+        #                     dist = d(wall,otherWall)
+        #                     if dist < 100 and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
+        #                         minDist = dist
+        #                         zeroWall = wall
+        #                         closeWall = otherWall
+        #                         closeCave = i
+        #     if zeroWall == None and closeWall == None:
+        #         zeroWall = zeroCaveWalls[random.randint(0,len(zeroCaveWalls)-1)]
+        #         closeCave = random.randint(0,len(self.cavesWalls)-1)
+        #         closeWall = self.cavesWalls[closeCave][random.randint(0,len(self.cavesWalls[closeCave])-1)]
+        #     bresen=list(map(t,list(bresenham(zeroWall.x,zeroWall.y,closeWall.x,closeWall.y))))
+        #     self.bresens.append(bresen)
+        #     self.cavesWalls.pop(closeCave)
+        #     closeCave = self.caves.pop(closeCave)
+        #     zeroCave = self.caves.pop(zeroCave)
+        #     self.caves.append(list(set.union(set(zeroCave),set(closeCave),set(bresen))))
+        #     for tile in bresen:
+        #         self.level[tile.y][tile.x]=False
+        #     self.cavesWalls.append(self.calcWalls(self.caves[-1]))
 
 
 AutoCell = AutomaticCell(HEIGHT,WIDTH)
@@ -176,7 +206,7 @@ iD.point(walls,(0,0,0))
 
 if DEBUG:
     cavesWalls = []
-    for cave in AutoCell.cavesWallsBackup:
+    for cave in AutoCell.cavesWalls:
         for tile in cave:
             cavesWalls.append((tile.x,tile.y))
     AutoCell.caves = []
@@ -188,8 +218,17 @@ if DEBUG:
         Cave = []
         for tile in cave:
             Cave.append((tile.x,tile.y))
-        Caves.append(Cave)
+    Bresens = []
+    for bresen in AutoCell.bresens:
+        Bresen = []
+        for tile in bresen:
+            Bresen.append((tile.x,tile.y))
+        Bresens.append(Bresen)
     iD.point(cavesWalls,(255,0,0))
     for Cave in Caves:
         iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
+    #for Bresen in Bresens:
+    #    iD.point(Bresen,(random.randint(128,255),random.randint(128,255),random.randint(128,255)))
+    iD.point((AutoCell.center.x,AutoCell.center.y),(0,0,255))
+    print(f"Center Cave: {AutoCell.cavesReferences.get(AutoCell.center,'NONE')}")
 I.show()
