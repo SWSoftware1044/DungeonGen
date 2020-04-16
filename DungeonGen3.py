@@ -59,12 +59,15 @@ class AutomaticCell:
         '''Floods cave areas from a point (y,x), ignoring walls.'''
         cave = set()
         toBeFilled = set([Tile(y,x)])
+        flatten = lambda l: [item for sublist in l for item in sublist]
+        tileAdd = lambda a,b: Tile(a.y+b.y,a.x+b.x)
         while toBeFilled:
             tile = toBeFilled.pop()
             if tile not in cave:
                 cave.add(tile)
                 self.level[tile.y][tile.x] = True
-                for adj in [Tile(j,i) for j,i in ((tile.y-1,tile.x), (tile.y+1,tile.x), (tile.y,tile.x-1), (tile.y,tile.x+1)) if 0<=j<self.h and 0<=i<self.w and not self.level[j][i]]:
+                neighboringTiles = flatten([[tileAdd(tile,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
+                for adj in [Tile(j,i) for j,i in neighboringTiles if 0<=j<self.h and 0<=i<self.w and not self.level[j][i]]:
                     if self.level[adj.y][adj.x] == 0:
                         if adj not in toBeFilled and adj not in cave:
                             toBeFilled.add(adj)
