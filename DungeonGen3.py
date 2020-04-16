@@ -4,7 +4,7 @@ from PIL import Image,ImageDraw
 from collections import namedtuple
 from bresenham import bresenham
 
-WIDTH = 20
+WIDTH = 200
 HEIGHT = 200
 Tile = namedtuple('Tile','y x')
 
@@ -17,14 +17,13 @@ class AutomaticCell:
         self.level = [[False for _ in range(self.w)] for _ in range(self.h)]
         self.caves = []
         self.cavesWalls = []
-        self.bresenLast = None
 
         self.sims = 8           #Number of times to run the celular automata model
         self.initLive = 0.40    #Initial amout of live cells.
         self.death = 4          #Cells with below this amount of neighbors will die
         self.birth = 4          #Cells with more than, or equal to this amount of neigbors will spontaneously resurect.
         self.minCave = 50       #Minimum size of a valid cave in cells
-        self.minNei = 4         #Minimum number of neighbors for a valid wall.
+        self.minNei = 2         #Minimum number of neighbors for a valid wall.
 
     def GENERATE(self):
         '''Performs level generation.'''
@@ -66,14 +65,13 @@ class AutomaticCell:
                         if adj not in toBeFilled and adj not in cave:
                             toBeFilled.add(adj)
         if len(cave) >= self.minCave:
-            self.caves.append(cave)
+            self.caves.append(list(cave))
 
-    def calcWalls(self):
-        for cave in self.caves:
+    def calcWalls(self,cave):
             caveNeighbors = dict()
             for tile in cave:
                 caveNeighbors[tile] = self.neighbors(tile.y,tile.x)
-            self.cavesWalls.append([k for k,v in caveNeighbors.items() if v >= self.minNei])
+            return [k for k,v in caveNeighbors.items() if v >= self.minNei]
 
     def setUpInitial(self):
         '''Sets up initial map, before cell simulation is applied. Percent of living cells is controlled by 'self.initLive' parameter.'''
@@ -108,37 +106,43 @@ class AutomaticCell:
         for cave in self.caves:
             for tile in cave:
                 self.level[tile.y][tile.x] = False
-        self.calcWalls()
+        for cave in self.caves:
+            self.cavesWalls.append(self.calcWalls(cave))
 
     def connect(self):
         d = lambda a,b: (b.x-a.x)**2 + (b.y-a.y)**2
         t = lambda a: Tile(a[1],a[0])
-        zeroCave = 0
-        zeroCaveWalls = self.cavesWalls.pop(0)
-        closeCave = None
-        zeroWall = None
-        closeWall = None
-        minDist = 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-        for wall in zeroCaveWalls:
-            for i,otherCave in enumerate(self.cavesWalls):
-                for otherWall in otherCave:
-                    dist = d(wall,otherWall)
-                    if dist < minDist:
-                        print(dist)
-                        minDist = dist
-                        zeroWall = wall
-                        closeWall = otherWall
-                        closeCave = i
-                        print(zeroWall)
-                        print(closeWall)
-        bresen=list(bresenham(zeroWall.x,zeroWall.y,closeWall.x,closeWall.y))
-        print("---\n",bresen)
-        bresen=list(map(t,bresen))
-        print(bresen)
-        self.caves.append(list(set.union(set(self.caves.pop(zeroCave)),set(self.caves.pop(closeCave)),set(bresen))))
-        self.bresenLast = bresen
-        for tile in bresen:
-            self.level[tile.y][tile.x]=False
+        while len(self.caves) > 1:
+            zeroCave = 0
+            zeroCaveWalls = self.cavesWalls.pop(0)
+            closeCave = None
+            zeroWall = None
+            closeWall = None
+            minDist = 100000000000000000000000000000
+            for wall in zeroCaveWalls:
+                for i,otherCave in enumerate(self.cavesWalls):
+                    for otherWall in otherCave:
+                        dist = d(wall,otherWall)
+                        if dist < minDist:
+                            minDist = dist
+                            zeroWall = wall
+                            closeWall = otherWall
+                            closeCave = i
+            if closeCave >= len(self.caves): #TODO: Figure out this issue. Temporary patch applied.
+                self.caves.pop(zeroCave)
+                print("!WARN: Cave Skipped.")
+                continue
+            bresen=list(bresenham(zeroWall.x,zeroWall.y,closeWall.x,closeWall.y))
+            bresen=list(map(t,bresen))
+            print(f"Length Before Pop: {len(self.caves)}")
+            print(f"-\nClose: {closeCave}:")
+            print(f"{self.caves[closeCave][0]}\n-")
+            closeCave = self.caves.pop(closeCave)
+            zeroCave = self.caves.pop(zeroCave)
+            self.caves.append(list(set.union(set(zeroCave),set(closeCave),set(bresen))))
+            for tile in bresen:
+                self.level[tile.y][tile.x]=False
+            self.cavesWalls.append(self.calcWalls(self.caves[-1]))
 
 
 AutoCell = AutomaticCell(HEIGHT,WIDTH)
@@ -151,21 +155,6 @@ for y,row in enumerate(level):
     for x,wall in enumerate(row):
         if wall:
             walls.append((x,y))
-caveWalls = []
-for cave in AutoCell.cavesWalls:
-    for wall in cave:
-        caveWalls.append((wall.x,wall.y))
-
-connection = []
-for tile in AutoCell.caves[-1]:
-    connection.append((tile.x,tile.y))
-
-bresen = []
-for tile in AutoCell.bresenLast:
-    bresen.append((tile.x,tile.y))
 
 iD.point(walls,(0,0,0))
-iD.point(connection,(0,255,0))
-iD.point(bresen,(0,0,255))
-iD.point(caveWalls,(255,0,0))
 I.show()
