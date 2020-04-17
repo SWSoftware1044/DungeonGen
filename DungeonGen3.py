@@ -4,7 +4,7 @@ from PIL import Image,ImageDraw
 from collections import namedtuple
 from bresenham import bresenham
 
-DEBUG = True
+DEBUG = False
 WIDTH = 200
 HEIGHT = 200
 Tile = namedtuple('Tile','y x')
@@ -14,7 +14,7 @@ TRANSPOSE = lambda a: Tile(a[1],a[0])
 ADD = lambda a,b: Tile(a.y+b.y,a.x+b.x)
 FLATTEN = lambda l: [item for sublist in l for item in sublist]
 
-random.seed('***REMOVED***')
+#random.seed('##########')
 
 class AutomaticCell:
     def __init__(self,h,w):
@@ -25,7 +25,6 @@ class AutomaticCell:
         self.caves = []
         self.cavesReferences = {}
         self.cavesWalls = []
-        self.bresens = []
 
         self.sims = 8           #Number of times to run the celular automata model
         self.initLive = 0.40    #Initial amout of live cells.
@@ -37,10 +36,13 @@ class AutomaticCell:
     def GENERATE(self):
         '''Performs level generation.'''
         self.setUpInitial()
-        for _ in range(self.sims):
+        for _ in range(self.sims-2):
             self.level = self.stepSimulate()
         self.cleanup()
         self.connect()
+        for _ in range(2):
+            self.level = self.stepSimulate()
+        self.cleanup()
         return self.level
 
     def neighbors(self,y,x):
@@ -104,7 +106,7 @@ class AutomaticCell:
                     if surrounding >= self.birth: levelChanged[y][x] = True
                     else: levelChanged[y][x] = False
         return levelChanged
-
+    
     def cleanup(self):
         '''Removes caves below the minmum cell requirement and live cells with only one neighbor.'''
         for y,row in enumerate(self.level):
@@ -134,7 +136,12 @@ class AutomaticCell:
         while len(cavesWalls) > 0:
             currentCaveWalls = cavesWalls.pop()
             for wall in currentCaveWalls:
-                bresen = list(map(TRANSPOSE,list(bresenham(wall.x,wall.y,self.center.x,self.center.y))))
+                if len(cavesWalls) > 1:
+                    randCave = random.randint(0,len(cavesWalls)-1)
+                    randWall = cavesWalls[randCave][random.randint(0,len(cavesWalls[randCave])-1)]
+                else:
+                    randWall = self.center
+                bresen = list(map(TRANSPOSE,list(bresenham(wall.x,wall.y,randWall.x,randWall.y))))
                 active = False
                 for i,point in enumerate(bresen[1:]):
                     if self.cavesReferences.get(point,-1) == self.cavesReferences[wall]:
@@ -144,52 +151,10 @@ class AutomaticCell:
                         active = True
                         break
                 if active:
-                    print('FOUND!')
                     for point in bresen:
-                        self.level[point.y][point.x] = False
-                    self.bresens.append(bresen)
+                        for neighbor in FLATTEN([[ADD(point,Tile(i,j)) for i in range(-1,2)] for j in range(-1,2)]):
+                            if self.level[neighbor.y][neighbor.x]: self.level[neighbor.y][neighbor.x] = False
                     break
-
-        # while len(self.caves) > 1:
-        #     zeroCave = 0
-        #     zeroCaveWalls = self.cavesWalls.pop(0)
-        #     closeCave = None
-        #     zeroWall = None
-        #     closeWall = None
-        #     minDist = 100000000000000000000000000000000000000000
-        #     for wall in zeroCaveWalls:
-        #         for i,otherCave in enumerate(self.cavesWalls):
-        #             for otherWall in otherCave:
-        #                 dist = d(wall,otherWall)
-        #                 if dist < minDist and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
-        #                     minDist = dist
-        #                     zeroWall = wall
-        #                     closeWall = otherWall
-        #                     closeCave = i
-        #     if zeroWall == None and closeWall == None:
-        #         print(len(self.cavesWalls))
-        #         for wall in zeroCaveWalls:
-        #             for i,otherCave in enumerate(self.cavesWalls):
-        #                 for otherWall in otherCave:
-        #                     dist = d(wall,otherWall)
-        #                     if dist < 100 and dist > 0 and otherWall not in zeroCaveWalls and wall not in otherCave:
-        #                         minDist = dist
-        #                         zeroWall = wall
-        #                         closeWall = otherWall
-        #                         closeCave = i
-        #     if zeroWall == None and closeWall == None:
-        #         zeroWall = zeroCaveWalls[random.randint(0,len(zeroCaveWalls)-1)]
-        #         closeCave = random.randint(0,len(self.cavesWalls)-1)
-        #         closeWall = self.cavesWalls[closeCave][random.randint(0,len(self.cavesWalls[closeCave])-1)]
-        #     bresen=list(map(t,list(bresenham(zeroWall.x,zeroWall.y,closeWall.x,closeWall.y))))
-        #     self.bresens.append(bresen)
-        #     self.cavesWalls.pop(closeCave)
-        #     closeCave = self.caves.pop(closeCave)
-        #     zeroCave = self.caves.pop(zeroCave)
-        #     self.caves.append(list(set.union(set(zeroCave),set(closeCave),set(bresen))))
-        #     for tile in bresen:
-        #         self.level[tile.y][tile.x]=False
-        #     self.cavesWalls.append(self.calcWalls(self.caves[-1]))
 
 
 AutoCell = AutomaticCell(HEIGHT,WIDTH)
@@ -218,17 +183,9 @@ if DEBUG:
         Cave = []
         for tile in cave:
             Cave.append((tile.x,tile.y))
-    Bresens = []
-    for bresen in AutoCell.bresens:
-        Bresen = []
-        for tile in bresen:
-            Bresen.append((tile.x,tile.y))
-        Bresens.append(Bresen)
     iD.point(cavesWalls,(255,0,0))
     for Cave in Caves:
         iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
-    #for Bresen in Bresens:
-    #    iD.point(Bresen,(random.randint(128,255),random.randint(128,255),random.randint(128,255)))
     iD.point((AutoCell.center.x,AutoCell.center.y),(0,0,255))
     print(f"Center Cave: {AutoCell.cavesReferences.get(AutoCell.center,'NONE')}")
 I.show()
