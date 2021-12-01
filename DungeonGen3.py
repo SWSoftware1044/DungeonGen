@@ -1,8 +1,8 @@
 import random
-import math
 from PIL import Image,ImageDraw
 from collections import namedtuple
 from bresenham import bresenham
+import time
 
 DEBUG = False
 WIDTH = 200
@@ -14,7 +14,7 @@ TRANSPOSE = lambda a: Tile(a[1],a[0])
 ADD = lambda a,b: Tile(a.y+b.y,a.x+b.x)
 FLATTEN = lambda l: [item for sublist in l for item in sublist]
 
-#random.seed('##########')
+#random.seed('DOG')
 
 class AutomaticCell:
     def __init__(self,h,w):
@@ -43,6 +43,7 @@ class AutomaticCell:
         for _ in range(2):
             self.level = self.stepSimulate()
         self.cleanup()
+        self.finalize()
         return self.level
 
     def neighbors(self,y,x):
@@ -61,6 +62,16 @@ class AutomaticCell:
     def orthNeighbors(self,y,x):
         '''Counts up orthagonal neighboring live cells.'''
         return len([(j,i) for j,i in ((y-1,x), (y+1,x), (y,x-1), (y,x+1)) if 0<=j<self.h and 0<=i<self.w and self.level[j][i]])
+
+    def orthSpecific(self,y,x):
+        '''Counts up orthagonal neighboring live cells, returning the cells themcellves. Up, Down, Left, Right.'''
+        returner = []
+        for j,i in ((y-1,x), (y+1,x), (y,x-1), (y,x+1)):
+            if 0<=j<self.h and 0<=i<self.w:
+                returner.append(self.level[j][i])
+            else:
+                returner.append(True)
+        return returner
 
     def floodFill(self,y,x):
         '''Floods cave areas from a point (y,x), ignoring walls.'''
@@ -121,17 +132,16 @@ class AutomaticCell:
                 self.level[tile.y][tile.x] = False
         for cave in self.caves:
             self.cavesWalls.append(self.calcWalls(cave))
-        if self.level[self.center.y][self.center.x]:
-            neighboringTiles = FLATTEN([[ADD(self.center,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
-            for tile in neighboringTiles:
-                if not self.level[tile.y][tile.x]:
-                    self.center = tile
-                    return
-            raise RuntimeError("Center not found. Map invalid.")
+        # if self.level[self.center.y][self.center.x]:
+        #     neighboringTiles = FLATTEN([[ADD(self.center,Tile(i,j)) for i in range(-1,2) if not (i==0 and j==0)] for j in range(-1,2)])
+        #     for tile in neighboringTiles:
+        #         if not self.level[tile.y][tile.x]:
+        #             self.center = tile
+        #             return
+        #     raise RuntimeError("Center not found. Map invalid.")
 
     def connect(self):
         '''Connects caves using bresenham lines.'''
-        # TODO: Add better connection, using center bresenhams and cave detection.
         cavesWalls = self.cavesWalls
         while len(cavesWalls) > 0:
             currentCaveWalls = cavesWalls.pop()
@@ -156,36 +166,47 @@ class AutomaticCell:
                             if self.level[neighbor.y][neighbor.x]: self.level[neighbor.y][neighbor.x] = False
                     break
 
+    def finalize(self):
+        for y,row in enumerate(self.level):
+            for x,_ in enumerate(row):
+                neighbors = self.orthSpecific(y,x)
+                if not (neighbors[0] or neighbors[1]) or not (neighbors[2] or neighbors[3]):
+                    self.level[y][x] = False
 
-AutoCell = AutomaticCell(HEIGHT,WIDTH)
-level = AutoCell.GENERATE()
-I = Image.new('RGB',(WIDTH,HEIGHT),(255,255,255))
-iD = ImageDraw.Draw(I)
 
-walls = []
-for y,row in enumerate(level):
-    for x,wall in enumerate(row):
-        if wall:
-            walls.append((x,y))
-iD.point(walls,(0,0,0))
+if __name__ == "__main__":
+    AutoCell = AutomaticCell(HEIGHT,WIDTH)
+    start = time.perf_counter()
+    level = AutoCell.GENERATE()
+    print(time.perf_counter() - start)
+    
+    I = Image.new('RGB',(WIDTH,HEIGHT),(255,255,255))
+    iD = ImageDraw.Draw(I)
 
-if DEBUG:
-    cavesWalls = []
-    for cave in AutoCell.cavesWalls:
-        for tile in cave:
-            cavesWalls.append((tile.x,tile.y))
-    AutoCell.caves = []
-    for y,row in enumerate(AutoCell.level):
+    walls = []
+    for y,row in enumerate(level):
         for x,wall in enumerate(row):
-            if not wall: AutoCell.floodFill(y,x)
-    Caves = []
-    for cave in AutoCell.caves:
-        Cave = []
-        for tile in cave:
-            Cave.append((tile.x,tile.y))
-    iD.point(cavesWalls,(255,0,0))
-    for Cave in Caves:
-        iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
-    iD.point((AutoCell.center.x,AutoCell.center.y),(0,0,255))
-    print(f"Center Cave: {AutoCell.cavesReferences.get(AutoCell.center,'NONE')}")
-I.show()
+            if wall:
+                walls.append((x,y))
+    iD.point(walls,(0,0,0))
+
+    if DEBUG:
+        cavesWalls = []
+        for cave in AutoCell.cavesWalls:
+            for tile in cave:
+                cavesWalls.append((tile.x,tile.y))
+        AutoCell.caves = []
+        for y,row in enumerate(AutoCell.level):
+            for x,wall in enumerate(row):
+                if not wall: AutoCell.floodFill(y,x)
+        Caves = []
+        for cave in AutoCell.caves:
+            Cave = []
+            for tile in cave:
+                Cave.append((tile.x,tile.y))
+        iD.point(cavesWalls,(255,0,0))
+        for Cave in Caves:
+            iD.point(Cave,(random.randint(0,255),random.randint(0,255),random.randint(0,255)))
+        iD.point((AutoCell.center.x,AutoCell.center.y),(0,0,255))
+        print(f"Center Cave: {AutoCell.cavesReferences.get(AutoCell.center,'NONE')}")
+    I.show()
